@@ -1,0 +1,7 @@
+{
+  "name": "Universal AI Voice Assistant",
+  "description": "A multilingual, developer-friendly AI voice assistant powered by Gemini Live API. Supports Hindi, English, Marathi, and provides system assistance simulations.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

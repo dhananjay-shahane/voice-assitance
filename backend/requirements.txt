@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+websockets
+google-genai
+ytmusicapi
+pydantic
+python-dotenv
+aiohttp
+sqlalchemy
