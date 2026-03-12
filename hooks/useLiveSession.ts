@@ -90,7 +90,9 @@ export const useLiveSession = ({ onToolCall, settings }: UseLiveSessionProps) =>
   }, []);
 
   const connect = useCallback(async () => {
-    const activeApiKey = settings.apiKey || process.env.API_KEY;
+    const activeApiKey = settings.apiKey || (process.env as any).GEMINI_API_KEY || (process.env as any).API_KEY;
+    console.log('Connecting with API Key (start):', activeApiKey ? activeApiKey.substring(0, 5) + '...' : 'MISSING');
+    console.log('Model:', settings.model || 'gemini-2.5-flash-native-audio-preview-09-2025');
 
     if (!activeApiKey) {
       addTranscript('system', 'Error: API Key is missing. Please check settings.');
@@ -136,7 +138,7 @@ export const useLiveSession = ({ onToolCall, settings }: UseLiveSessionProps) =>
         model: settings.model || 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
           responseModalities: [Modality.AUDIO],
-          systemInstruction: { parts: [{ text: instructions }] },
+          systemInstruction: instructions,
           tools: [{ functionDeclarations: tools }],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.voiceName || 'Kore' } }
@@ -235,11 +237,11 @@ export const useLiveSession = ({ onToolCall, settings }: UseLiveSessionProps) =>
                     if (sessionPromiseRef.current) {
                         sessionPromiseRef.current.then(session => {
                             session.sendToolResponse({
-                                functionResponses: {
+                                functionResponses: [{
                                     id: fc.id,
                                     name: fc.name,
                                     response: result
-                                }
+                                }]
                             });
                         });
                     }
@@ -251,7 +253,17 @@ export const useLiveSession = ({ onToolCall, settings }: UseLiveSessionProps) =>
             cleanupAudio();
           },
           onerror: (err) => {
-            console.error("Live Session Error:", err instanceof Error ? err.message : "Unknown error");
+            console.error("Live Session Error Object:", err);
+            let errorMessage = "Unknown error";
+            if (err instanceof Error) {
+              errorMessage = err.message;
+            } else if (typeof err === 'string') {
+              errorMessage = err;
+            } else if (err && typeof err === 'object') {
+              errorMessage = (err as any).message || (err as any).error || JSON.stringify(err);
+            }
+            
+            addTranscript('system', `Live Session Error: ${errorMessage}`);
             setConnectionState(ConnectionState.ERROR);
             cleanupAudio();
           }

@@ -105,4 +105,18 @@ export const tools: FunctionDeclaration[] = [
       required: ['url'],
     },
   },
+  {
+    name: 'getWeather',
+    description: 'Get the current weather for a specific city.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        city: {
+          type: Type.STRING,
+          description: 'The name of the city.',
+        },
+      },
+      required: ['city'],
+    },
+  },
 ];
