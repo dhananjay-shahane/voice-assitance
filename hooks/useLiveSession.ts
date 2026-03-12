@@ -35,17 +35,31 @@ export const useLiveSession = ({ onToolCall, settings }: UseLiveSessionProps) =>
 
   const addTranscript = useCallback((role: 'user' | 'assistant' | 'system', text: string, isFinal: boolean = true) => {
     setTranscripts(prev => {
-      if (!isFinal && prev.length > 0 && prev[prev.length - 1].role === role && (Date.now() - prev[prev.length - 1].timestamp.getTime() < 5000)) {
-         const newArr = [...prev];
-         newArr[newArr.length - 1] = { ...newArr[newArr.length - 1], text };
-         return newArr;
+      const lastMsg = prev.length > 0 ? prev[prev.length - 1] : null;
+      
+      // If the last message was interim and from the same role, replace it
+      if (lastMsg && lastMsg.role === role && lastMsg.id.includes('interim')) {
+          const newArr = [...prev];
+          newArr[newArr.length - 1] = { 
+              ...lastMsg, 
+              text, 
+              id: isFinal ? (Date.now().toString() + Math.random()) : lastMsg.id 
+          };
+          return newArr;
       }
-      return [...prev, { id: Date.now().toString() + Math.random(), role, text, timestamp: new Date() }];
+      
+      // Otherwise append new
+      const id = (isFinal ? '' : 'interim-') + Date.now().toString() + Math.random();
+      return [...prev, { id, role, text, timestamp: new Date() }];
     });
   }, []);
 
   const clearTranscripts = useCallback(() => {
     setTranscripts([]);
+  }, []);
+
+  const loadTranscripts = useCallback((messages: Message[]) => {
+    setTranscripts(messages);
   }, []);
 
   const cleanupAudio = useCallback(async () => {
@@ -111,12 +125,7 @@ export const useLiveSession = ({ onToolCall, settings }: UseLiveSessionProps) =>
       const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
       processorRef.current = scriptProcessor;
 
-      const clientOptions: any = { apiKey: activeApiKey };
-      if (settings.baseUrl) {
-          clientOptions.baseUrl = settings.baseUrl; 
-      }
-
-      const ai = new GoogleGenAI(clientOptions);
+      const ai = new GoogleGenAI({ apiKey: activeApiKey });
       
       // Determine System Instruction
       const instructions = settings.systemInstruction?.trim() 
@@ -250,8 +259,13 @@ export const useLiveSession = ({ onToolCall, settings }: UseLiveSessionProps) =>
       });
       sessionPromiseRef.current = sessionPromise;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        addTranscript('system', 'Error: Microphone permission denied. Please allow microphone access in your browser settings.');
+      } else {
+        addTranscript('system', 'Error: Could not connect to voice session.');
+      }
       setConnectionState(ConnectionState.ERROR);
       cleanupAudio();
     }
@@ -286,5 +300,5 @@ export const useLiveSession = ({ onToolCall, settings }: UseLiveSessionProps) =>
     return () => cancelAnimationFrame(animationFrame);
   }, []);
 
-  return { connect, disconnect, clearTranscripts, connectionState, transcripts, volume };
+  return { connect, disconnect, clearTranscripts, loadTranscripts, connectionState, transcripts, volume };
 };

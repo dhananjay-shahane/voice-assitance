@@ -15,36 +15,43 @@ const SEARCH_INSTANCES = [
   "https://pipedapi.ducks.party",
   "https://inv.tux.pizza/api/v1",
   "https://vid.puffyan.us/api/v1",
-  "https://invidious.projectsegfau.lt/api/v1"
+  "https://invidious.projectsegfau.lt/api/v1",
+  "https://invidious.nerdvpn.de/api/v1",
+  "https://invidious.tiekoetter.com/api/v1"
 ];
 
 export const findVideoId = async (query: string): Promise<{ id: string, title: string } | null> => {
-    for (const instance of SEARCH_INSTANCES) {
-        try {
-            const isInvidious = instance.includes('/api/v1');
-            const searchUrl = isInvidious 
-                ? `${instance}/search?q=${encodeURIComponent(query)}` 
-                : `${instance}/search?q=${encodeURIComponent(query)}&filter=videos`;
+    // 🧠 Root Fix: Try search with "lyrics" appended for better embed compatibility
+    const queries = [query, `${query} lyrics`];
+    
+    for (const q of queries) {
+        for (const instance of SEARCH_INSTANCES) {
+            try {
+                const isInvidious = instance.includes('/api/v1');
+                const searchUrl = isInvidious 
+                    ? `${instance}/search?q=${encodeURIComponent(q)}` 
+                    : `${instance}/search?q=${encodeURIComponent(q)}&filter=videos`;
 
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2000); // 2s timeout
-            
-            const res = await fetch(searchUrl, { signal: controller.signal });
-            clearTimeout(timeoutId);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 1500); // Faster timeout
+                
+                const res = await fetch(searchUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
 
-            if (!res.ok) continue;
-            
-            const data = await res.json();
-            
-            if (isInvidious) {
-                const item = Array.isArray(data) ? data.find((i: any) => i.type === 'video') : null;
-                if (item?.videoId) return { id: item.videoId, title: item.title };
-            } else {
-                const item = data.items?.find((i: any) => i.type === 'stream');
-                if (item?.url) return { id: item.url.split('v=')[1], title: item.title };
+                if (!res.ok) continue;
+                
+                const data = await res.json();
+                
+                if (isInvidious) {
+                    const item = Array.isArray(data) ? data.find((i: any) => i.type === 'video') : null;
+                    if (item?.videoId) return { id: item.videoId, title: item.title };
+                } else {
+                    const item = data.items?.find((i: any) => i.type === 'stream');
+                    if (item?.url) return { id: item.url.split('v=')[1], title: item.title };
+                }
+            } catch (e) {
+                // Silently fail and try next
             }
-        } catch (e) {
-            // Silently fail and try next
         }
     }
     return null;

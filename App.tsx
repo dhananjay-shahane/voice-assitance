@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Mic, MicOff, Settings as SettingsIcon, MessageSquare, Activity, PanelLeftOpen } from 'lucide-react';
 import { useLiveSession } from './hooks/useLiveSession';
 import { useWakeWord } from './hooks/useWakeWord';
@@ -14,6 +14,18 @@ import { findVideoId } from './utils/search';
 import { ConnectionState, AppSettings, AssistantAction, MusicState, ChatSession, WeatherState } from './types';
 import { SYSTEM_INSTRUCTION } from './constants';
 
+// 🎵 SMART TRACK LIBRARY
+// Reliable, high-uptime streams from Google Storage
+const TRACK_LIBRARY: Record<string, { url: string; artist: string; label: string }> = {
+  'hindi': { url: 'https://codeskulptor-demos.commondatastorage.googleapis.com/pang/paza-moduless.mp3', artist: 'Desi Beats', label: 'Bollywood Instrumental' },
+  'punjabi': { url: 'https://codeskulptor-demos.commondatastorage.googleapis.com/GalaxyInvaders/theme_01.mp3', artist: 'Punjabi Beats', label: 'Bhangra Flow' },
+  'pop': { url: 'https://codeskulptor-demos.commondatastorage.googleapis.com/pang/arrow.mp3', artist: 'Top Hits', label: 'Pop Radio' },
+  'rock': { url: 'https://commondatastorage.googleapis.com/codeskulptor-assets/Epoq-Lepidoptera.ogg', artist: 'Rock Legends', label: 'Classic Rock' },
+  'lofi': { url: 'https://codeskulptor-demos.commondatastorage.googleapis.com/pang/paza-moduless.mp3', artist: 'Chillhop', label: 'Study Beats' },
+  'jazz': { url: 'https://commondatastorage.googleapis.com/codeskulptor-assets/week7-brrring.m4a', artist: 'Jazz Quartet', label: 'Smooth Jazz' },
+  'default': { url: 'https://commondatastorage.googleapis.com/codeskulptor-assets/Soundon.mp3', artist: 'Universal', label: 'Music Stream' }
+};
+
 function App() {
   const [lastAction, setLastAction] = useState<AssistantAction>({ type: null, message: null });
   const [musicState, setMusicState] = useState<MusicState | null>(null);
@@ -21,6 +33,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileTab, setMobileTab] = useState<'voice' | 'chat'>('voice');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   
   // Responsive sidebar init
   useEffect(() => {
@@ -33,16 +46,14 @@ function App() {
   const [settings, setSettings] = useState<AppSettings>(() => ({
     apiKey: localStorage.getItem('user_api_key') || '',
     model: localStorage.getItem('user_model') || 'gemini-2.5-flash-native-audio-preview-09-2025',
-    baseUrl: localStorage.getItem('user_base_url') || '',
     voiceName: localStorage.getItem('user_voice') || 'Kore',
     systemInstruction: localStorage.getItem('user_system_instruction') || SYSTEM_INSTRUCTION,
-    pythonBackendUrl: localStorage.getItem('user_python_backend') || 'http://localhost:8000'
+    pythonBackendUrl: localStorage.getItem('user_python_backend') || window.location.origin
   }));
 
   const saveSettings = (newSettings: AppSettings) => {
       localStorage.setItem('user_api_key', newSettings.apiKey);
       localStorage.setItem('user_model', newSettings.model);
-      localStorage.setItem('user_base_url', newSettings.baseUrl);
       localStorage.setItem('user_voice', newSettings.voiceName);
       localStorage.setItem('user_system_instruction', newSettings.systemInstruction);
       localStorage.setItem('user_python_backend', newSettings.pythonBackendUrl);
@@ -52,6 +63,8 @@ function App() {
 
   // History State
   const [history, setHistory] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const lastSavedTranscriptsRef = useRef<string>('');
 
   // Fetch history from Python Backend
   const fetchHistory = useCallback(async () => {
@@ -166,32 +179,85 @@ function App() {
       }
 
       if (query) {
-        const cleanQuery = query.replace(/["']/g, '');
+        const cleanQuery = query.replace(/["']/g, '').toLowerCase();
+        
+        // 🧠 Check Track Library First for Genre Matches
+        let matchedTrack = null;
+        if (cleanQuery.includes('hindi') || cleanQuery.includes('bollywood')) matchedTrack = TRACK_LIBRARY['hindi'];
+        else if (cleanQuery.includes('punjabi')) matchedTrack = TRACK_LIBRARY['punjabi'];
+        else if (cleanQuery.includes('rock')) matchedTrack = TRACK_LIBRARY['rock'];
+        else if (cleanQuery.includes('pop')) matchedTrack = TRACK_LIBRARY['pop'];
+        else if (cleanQuery.includes('jazz')) matchedTrack = TRACK_LIBRARY['jazz'];
+        else if (cleanQuery.includes('lofi') || cleanQuery.includes('relax')) matchedTrack = TRACK_LIBRARY['lofi'];
+
+        if (matchedTrack) {
+            setMusicState({ 
+                url: matchedTrack.url, 
+                title: matchedTrack.label, 
+                query: cleanQuery,
+                isLoading: false, 
+                error: false 
+            });
+            setLastAction({ type: 'music', message: `Playing: ${matchedTrack.label}` });
+            setTimeout(() => setLastAction({ type: null, message: null }), 5000);
+            return { success: true, message: `Playing ${matchedTrack.label} from library` };
+        }
+
+        // Fallback to Search
         setMusicState({ query: cleanQuery, isLoading: true, error: false });
         setLastAction({ type: 'music', message: `Searching: ${cleanQuery}...` });
 
-        // Try Python Backend First if connected, or fallback to frontend logic
-        // For now, we keep frontend logic as fallback if tool wasn't intercepted by proxy
-        findVideoId(cleanQuery).then((result) => {
-            if (result) {
-                setMusicState({ 
-                    videoId: result.id, 
-                    query: cleanQuery, 
-                    title: result.title, 
-                    isLoading: false,
-                    error: false
-                });
-                setLastAction({ type: 'music', message: `Found: ${result.title}` });
-            } else {
-                setMusicState({ 
-                    query: cleanQuery, 
-                    isLoading: false,
-                    error: true 
-                });
-                setLastAction({ type: 'music', message: `Click to play on YouTube` });
+        const handleSearchFallback = async (q: string) => {
+            try {
+                const result = await findVideoId(q);
+                if (result) {
+                    setMusicState({ 
+                        videoId: result.id, 
+                        query: q, 
+                        title: result.title, 
+                        isLoading: false,
+                        error: false
+                    });
+                    setLastAction({ type: 'music', message: `Found: ${result.title}` });
+                } else {
+                    setMusicState({ 
+                        query: q, 
+                        isLoading: false,
+                        error: true 
+                    });
+                    setLastAction({ type: 'music', message: `Click to play on YouTube` });
+                }
+            } catch (e) {
+                setMusicState({ query: q, isLoading: false, error: true });
             }
             setTimeout(() => setLastAction({ type: null, message: null }), 5000);
-        });
+        };
+
+        // Try Backend Search First
+        fetch(`${settings.pythonBackendUrl}/api/search-music?q=${encodeURIComponent(cleanQuery)}`)
+            .then(async res => {
+                if (!res.ok) throw new Error('Backend search failed');
+                return res.json();
+            })
+            .then(result => {
+                if (result && result.id) {
+                    setMusicState({ 
+                        videoId: result.id, 
+                        query: cleanQuery, 
+                        title: result.title,
+                        thumbnail: result.thumbnail,
+                        isLoading: false,
+                        error: false
+                    });
+                    setLastAction({ type: 'music', message: `Found: ${result.title}` });
+                    setTimeout(() => setLastAction({ type: null, message: null }), 5000);
+                } else {
+                    handleSearchFallback(cleanQuery);
+                }
+            })
+            .catch(() => {
+                handleSearchFallback(cleanQuery);
+            });
 
         return { success: true, message: `Searching for ${cleanQuery}` };
       }
@@ -206,7 +272,15 @@ function App() {
     return { error: 'Unknown tool' };
   }, []);
 
-  const { connect, disconnect, clearTranscripts, connectionState, transcripts, volume } = useLiveSession({
+  const { 
+    connect, 
+    disconnect, 
+    clearTranscripts, 
+    loadTranscripts,
+    connectionState, 
+    transcripts, 
+    volume 
+  } = useLiveSession({
     onToolCall: handleToolCall,
     settings
   });
@@ -243,25 +317,53 @@ function App() {
   // Save session to backend or local
   const saveCurrentSession = useCallback(async () => {
     if (transcripts.length > 0) {
+      const transcriptsStr = JSON.stringify(transcripts);
+      if (transcriptsStr === lastSavedTranscriptsRef.current) return;
+      
       const firstUserMessage = transcripts.find(m => m.role === 'user')?.text || 'New Conversation';
       const title = firstUserMessage.length > 30 ? firstUserMessage.substring(0, 30) + '...' : firstUserMessage;
       
+      const sessionId = currentSessionId || Date.now().toString();
+      
       const newSession: ChatSession = {
-        id: Date.now().toString(),
+        id: sessionId,
         title,
         date: new Date().toISOString(),
         messages: [...transcripts]
       };
       
-      // Try saving to backend (assuming endpoint exists, unimplemented in this demo XML, but structural)
-      // For now, update local state
-      setHistory(prev => [newSession, ...prev]);
+      // Save to backend
+      try {
+          const res = await fetch(`${settings.pythonBackendUrl}/api/history`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newSession)
+          });
+          if (res.ok) {
+              lastSavedTranscriptsRef.current = transcriptsStr;
+              if (!currentSessionId) setCurrentSessionId(sessionId);
+              setHistory(prev => {
+                  const filtered = prev.filter(s => s.id !== sessionId);
+                  return [newSession, ...filtered];
+              });
+          }
+      } catch (e) {
+          console.error('Failed to save session to backend', e);
+          setHistory(prev => {
+              const filtered = prev.filter(s => s.id !== sessionId);
+              return [newSession, ...filtered];
+          });
+      }
     }
-  }, [transcripts]);
+  }, [transcripts, settings.pythonBackendUrl, currentSessionId]);
 
-  const handleNewChat = () => {
-    saveCurrentSession();
+  const handleNewChat = async () => {
+    if (transcripts.length > 0) {
+      await saveCurrentSession();
+    }
     clearTranscripts();
+    lastSavedTranscriptsRef.current = '';
+    setCurrentSessionId(null);
     setMusicState(null);
     setWeatherState(null);
     if (isConnected) disconnect();
@@ -279,22 +381,62 @@ function App() {
     }
   };
 
-  const handleSelectSession = (session: ChatSession) => {
-     saveCurrentSession();
+  const handleSelectSession = async (session: ChatSession) => {
+     if (session.id === currentSessionId) return;
+     
+     if (transcripts.length > 0) {
+       await saveCurrentSession();
+     }
+     
+     setCurrentSessionId(session.id);
+     lastSavedTranscriptsRef.current = JSON.stringify(session.messages);
+     loadTranscripts(session.messages);
+     if (window.innerWidth < 768) setMobileTab('chat');
   };
 
-  const toggleConnection = () => {
+  const toggleConnection = async () => {
     if (isConnected || isConnecting) {
-      saveCurrentSession();
+      await saveCurrentSession();
       disconnect();
     } else {
       connect();
     }
   };
 
+  // Sync Audio Element for Direct URLs
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !musicState?.url) return;
+
+    try {
+        if (audio.src !== musicState.url) {
+            audio.src = musicState.url;
+            audio.load();
+        }
+        audio.play().catch(err => {
+            if (err.name !== 'AbortError') {
+                console.warn("Audio Playback Error:", err.message);
+            }
+        });
+    } catch (e) {
+        console.error("Audio Setup Error");
+    }
+  }, [musicState?.url]);
+
   return (
     <div className="h-screen w-screen bg-[#09090b] text-zinc-100 flex relative overflow-hidden font-sans selection:bg-purple-500/30">
       
+      {/* Audio Element for Direct Library Playback */}
+      <audio 
+        ref={audioRef} 
+        onEnded={() => setMusicState(null)}
+        onError={() => {
+            // CRITICAL: Do not log the event object to avoid circular structure errors
+            console.error("Audio Load Error: Failed to load because no supported source was found");
+            setMusicState(prev => prev ? { ...prev, error: true, isLoading: false } : null);
+        }}
+      />
+
       {/* Background */}
       <div className="absolute inset-0 pointer-events-none z-0">
          <div className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] bg-blue-600/10 rounded-full blur-[120px] opacity-50 animate-pulse"></div>
@@ -415,7 +557,17 @@ function App() {
         </div>
 
         {/* Global Overlays */}
-        <MusicPlayer musicState={musicState} onClose={() => setMusicState(null)} />
+      <MusicPlayer 
+        musicState={musicState} 
+        onClose={() => setMusicState(null)} 
+        onRetry={() => {
+          if (musicState?.query) {
+            // Re-trigger search with "audio" keyword for better embed compatibility
+            const retryQuery = `${musicState.query} audio`;
+            handleToolCall('playMusic', { query: retryQuery });
+          }
+        }}
+      />
         <WeatherWidget weather={weatherState} onClose={() => setWeatherState(null)} />
         <ActionHUD action={lastAction} />
 

@@ -20,7 +20,6 @@ export interface Reminder {
 export interface AppSettings {
   apiKey: string;
   model: string;
-  baseUrl: string;
   voiceName: string;
   systemInstruction: string;
   pythonBackendUrl: string; // New: For Python Proxy
@@ -34,8 +33,10 @@ export interface AssistantAction {
 
 export interface MusicState {
   videoId?: string;
+  url?: string;
   query?: string;
   title?: string;
+  thumbnail?: string;
   isLoading?: boolean;
   error?: boolean;
 }

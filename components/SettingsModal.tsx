@@ -15,16 +15,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, currentS
 
   if (!isOpen) return null;
 
-  const handlePreset = (type: 'google' | 'ollama' | 'local') => {
-      if (type === 'google') {
-          setSettings(prev => ({ ...prev, baseUrl: '' }));
-      } else if (type === 'ollama') {
-          setSettings(prev => ({ ...prev, baseUrl: 'http://localhost:11434/v1' }));
-      } else if (type === 'local') {
-          setSettings(prev => ({ ...prev, baseUrl: 'http://localhost:1234/v1' }));
-      }
-  };
-
   return (
     <div className="absolute inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl ring-1 ring-white/10 flex flex-col md:flex-row overflow-hidden max-h-[90vh]">
@@ -87,28 +77,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, currentS
                         placeholder="gemini-2.5-flash-native-audio-preview-09-2025"
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 font-mono placeholder:text-zinc-700"
                         />
-                    </div>
-
-                    <div>
-                        <div className="flex justify-between items-center mb-2">
-                            <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider">
-                                API Base URL (Proxy/Local)
-                            </label>
-                            <div className="flex gap-2">
-                                <button onClick={() => handlePreset('google')} className="text-[10px] px-2 py-1 bg-zinc-800 rounded hover:bg-zinc-700 text-zinc-300">Default</button>
-                                <button onClick={() => handlePreset('ollama')} className="text-[10px] px-2 py-1 bg-zinc-800 rounded hover:bg-zinc-700 text-zinc-300">Ollama</button>
-                            </div>
-                        </div>
-                        <input 
-                            type="text" 
-                            value={settings.baseUrl}
-                            onChange={(e) => setSettings({...settings, baseUrl: e.target.value})}
-                            placeholder="https://generativelanguage.googleapis.com"
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 font-mono placeholder:text-zinc-700"
-                        />
-                        <p className="text-[10px] text-zinc-600 mt-1">
-                            Set to <code className="text-zinc-400">http://localhost:11434/v1</code> for Ollama (requires compatible proxy for Live API).
-                        </p>
                     </div>
                 </div>
             )}

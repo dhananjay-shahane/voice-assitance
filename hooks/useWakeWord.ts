@@ -3,6 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 export const useWakeWord = (onWake: () => void, isConnected: boolean) => {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const isConnectedRef = useRef(isConnected);
+  const shouldListenRef = useRef(!isConnected);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+    shouldListenRef.current = !isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
     // Check browser support
@@ -33,12 +40,38 @@ export const useWakeWord = (onWake: () => void, isConnected: boolean) => {
     };
 
     recognition.onerror = (event: any) => {
+      if (event.error === 'aborted') return;
+      
       console.error('Speech recognition error', event.error);
+      if (event.error === 'not-allowed') {
+        console.warn('Microphone permission denied for wake word detection.');
+      }
+    };
+
+    recognition.onend = () => {
+      // Restart if we are supposed to be listening
+      if (shouldListenRef.current && recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          // ignore
+        }
+      } else {
+        setIsListening(false);
+      }
     };
 
     recognitionRef.current = recognition;
 
+    if (shouldListenRef.current) {
+      try {
+        recognition.start();
+        setIsListening(true);
+      } catch (e) {}
+    }
+
     return () => {
+      shouldListenRef.current = false;
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
@@ -50,21 +83,17 @@ export const useWakeWord = (onWake: () => void, isConnected: boolean) => {
     if (!recognitionRef.current) return;
 
     if (isConnected) {
-      // If connected to Gemini, stop wake word listener to avoid conflicts
+      shouldListenRef.current = false;
       try {
         recognitionRef.current.stop();
         setIsListening(false);
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     } else {
-      // If disconnected, start listening for wake word
+      shouldListenRef.current = true;
       try {
         recognitionRef.current.start();
         setIsListening(true);
-      } catch (e) {
-        // ignore, might already be started
-      }
+      } catch (e) {}
     }
   }, [isConnected]);
 
